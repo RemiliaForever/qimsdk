@@ -7,7 +7,7 @@
 import argparse
 
 
-def run(model: str, prompt: str) -> None:
+def run(model: str, prompt: str, device: str) -> None:
     from qimsdk import AppSink, Element, ImageFilter, Pipeline, StreamFilter
 
     inference_count = 0
@@ -36,7 +36,9 @@ def run(model: str, prompt: str) -> None:
         "leaky", 2, "max-size-buffers", 1, "max-size-bytes", 0, "max-size-time", 0
     )
     encoder = Element("jpegenc", "encoder").set("quality", 85)
-    vlm = Element("geniex", "vlm").set("model", model, "prompt", prompt)
+    vlm = Element("geniex", "vlm").set(
+        "model", model, "prompt", prompt, "device", device
+    )
     sink = AppSink("output").set("sync", False).set_buffer_consumer(print_response)
 
     pipeline = (
@@ -79,9 +81,14 @@ def main() -> None:
         help="GenieX model ID (downloaded automatically if not cached)",
     )
     parser.add_argument("--prompt", default="Describe this image.")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Device alias/list (default: auto)",
+    )
     args = parser.parse_args()
 
-    run(args.model, args.prompt)
+    run(args.model, args.prompt, args.device)
 
 
 if __name__ == "__main__":

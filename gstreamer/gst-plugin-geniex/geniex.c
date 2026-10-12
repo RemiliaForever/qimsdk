@@ -30,6 +30,7 @@ struct _GstGenieX {
   gboolean runtime_acquired;
   gchar *model_id;
   gchar *prompt;
+  gchar *device;
 };
 
 G_DEFINE_TYPE (GstGenieX, gst_geniex, GST_TYPE_ELEMENT);
@@ -38,6 +39,7 @@ typedef enum {
   PROP_0,
   PROP_MODEL,
   PROP_PROMPT,
+  PROP_DEVICE,
   N_PROPERTIES
 } GstGenieXProperty;
 
@@ -245,6 +247,8 @@ gst_geniex_load_model (GstGenieX *self, gchar **error)
 {
   geniex_ModelPaths paths = { 0 };
   geniex_VlmCreateInput input = { 0 };
+  geniex_ResolveDeviceInput device_input = { 0 };
+  geniex_ResolveDeviceOutput device_output = { 0 };
   geniex_VLM *vlm = NULL;
   gchar *resolved_id = NULL;
   gchar *pull_name = NULL;
@@ -290,15 +294,33 @@ gst_geniex_load_model (GstGenieX *self, gchar **error)
     *error = gst_geniex_mm_error ("Model lookup failed", rc);
     goto done;
   }
-  if (paths.model_type != GENIEX_MODEL_TYPE_VLM || paths.mmproj_path == NULL) {
+  if (paths.model_type != GENIEX_MODEL_TYPE_VLM ||
+      (g_strcmp0 (paths.plugin_id, "llama_cpp") == 0 &&
+       paths.mmproj_path == NULL)) {
     *error = g_strdup_printf ("Model '%s' is not a GenieX VLM model", model_id);
     goto done;
   }
+
+  device_input.plugin_id = paths.plugin_id;
+  device_input.model_name = paths.model_name != NULL ? paths.model_name : model_id;
+  device_input.mode = self->device;
+  device_input.ngl_default = -1;
+  rc = geniex_resolve_device (&device_input, &device_output);
+  if (rc != GENIEX_SUCCESS) {
+    *error = g_strdup_printf ("Device resolution failed for '%s': %s (%d)",
+        self->device, gst_geniex_error_message (rc), rc);
+    goto done;
+  }
+  if (device_output.warning != NULL)
+    GST_WARNING_OBJECT (self, "GenieX device resolver: %s", device_output.warning);
 
   input.model_path = paths.model_path;
   input.mmproj_path = paths.mmproj_path;
   input.tokenizer_path = paths.tokenizer_path;
   input.plugin_id = paths.plugin_id;
+  input.device_id = device_output.device_id;
+  input.config.n_gpu_layers = device_output.ngl;
+  input.config.power_mode = GENIEX_POWER_MODE_BURST;
 
   rc = geniex_vlm_create (&input, &vlm);
   if (rc != GENIEX_SUCCESS || vlm == NULL) {
@@ -311,6 +333,8 @@ gst_geniex_load_model (GstGenieX *self, gchar **error)
   GST_INFO_OBJECT (self, "Loaded GenieX VLM '%s'", model_id);
 
 done:
+  geniex_free (device_output.device_id);
+  geniex_free (device_output.warning);
   geniex_model_paths_free (&paths);
   geniex_free (resolved_id);
   g_free (pull_name);
@@ -558,6 +582,10 @@ gst_geniex_set_property (GObject *object, guint property_id,
       g_free (self->prompt);
       self->prompt = g_value_dup_string (value);
       break;
+    case PROP_DEVICE:
+      g_free (self->device);
+      self->device = g_value_dup_string (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -579,6 +607,9 @@ gst_geniex_get_property (GObject *object, guint property_id,
     case PROP_PROMPT:
       g_value_set_string (value, self->prompt);
       break;
+    case PROP_DEVICE:
+      g_value_set_string (value, self->device);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -594,6 +625,7 @@ gst_geniex_finalize (GObject *object)
   gst_geniex_stop (self);
   g_free (self->model_id);
   g_free (self->prompt);
+  g_free (self->device);
   g_mutex_clear (&self->lock);
   G_OBJECT_CLASS (gst_geniex_parent_class)->finalize (object);
 }
@@ -614,6 +646,9 @@ gst_geniex_class_init (GstGenieXClass *klass)
   properties[PROP_PROMPT] = g_param_spec_string ("prompt", "Prompt",
       "Fixed prompt sent with each image", "Describe this image.",
       G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+  properties[PROP_DEVICE] = g_param_spec_string ("device", "Device",
+      "GenieX device alias or concrete device list (auto, cpu, gpu, npu, hybrid)",
+      "auto", G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
   g_object_class_install_properties (object_class, G_N_ELEMENTS (properties),
       properties);
 
@@ -633,6 +668,7 @@ gst_geniex_init (GstGenieX *self)
 {
   g_mutex_init (&self->lock);
   self->prompt = g_strdup ("Describe this image.");
+  self->device = g_strdup ("auto");
   self->sinkpad = gst_pad_new_from_static_template (&sink_template, "sink");
   gst_pad_set_chain_function (self->sinkpad, GST_DEBUG_FUNCPTR (gst_geniex_chain));
   gst_pad_set_event_function (self->sinkpad,

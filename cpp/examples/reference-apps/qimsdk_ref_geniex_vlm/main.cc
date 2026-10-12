@@ -20,7 +20,8 @@ namespace {
 constexpr const char *kDefaultModel = "unsloth/Qwen3.5-2B-GGUF:Q4_0";
 constexpr const char *kDefaultPrompt = "Describe this image.";
 
-void run(const std::string &model, const std::string &prompt) {
+void run(const std::string &model, const std::string &prompt,
+    const std::string &device) {
   std::size_t inference_count = 0;
 
   Element source("videotestsrc", "source");
@@ -39,7 +40,7 @@ void run(const std::string &model, const std::string &prompt) {
       .set("max-size-time", 0ULL);
 
   Element vlm("geniex", "vlm");
-  vlm.set("model", model).set("prompt", prompt);
+  vlm.set("model", model).set("prompt", prompt).set("device", device);
 
   AppSink sink("output");
   sink.set("sync", false);
@@ -94,6 +95,7 @@ void run(const std::string &model, const std::string &prompt) {
 int main(int argc, char **argv) {
   std::string model = kDefaultModel;
   std::string prompt = kDefaultPrompt;
+  std::string device = "auto";
 
   auto print_usage = [&](std::ostream &out) {
     out << "Usage: " << argv[0] << " [OPTIONS]\n\n"
@@ -101,6 +103,7 @@ int main(int argc, char **argv) {
         << "  --model ID       GenieX model ID (default: " << kDefaultModel << ")\n"
         << "  --prompt TEXT    Prompt sent with each image (default: \""
         << kDefaultPrompt << "\")\n"
+        << "  --device MODE    Device alias/list (default: auto)\n"
         << "  -h, --help       Show this help message and exit\n";
   };
 
@@ -110,12 +113,15 @@ int main(int argc, char **argv) {
       print_usage(std::cout);
       return 0;
     }
-    if ((arg == "--model" || arg == "--prompt") && i + 1 < argc) {
+    if ((arg == "--model" || arg == "--prompt" || arg == "--device") &&
+        i + 1 < argc) {
       const std::string value = argv[++i];
       if (arg == "--model")
         model = value;
-      else
+      else if (arg == "--prompt")
         prompt = value;
+      else
+        device = value;
       continue;
     }
 
@@ -129,7 +135,7 @@ int main(int argc, char **argv) {
   SetImsdkLogLevel(ImsdkLogLevel::Debug);
 
   try {
-    run(model, prompt);
+    run(model, prompt, device);
   } catch (const std::exception &ex) {
     std::cerr << "Exception: " << ex.what() << std::endl;
     return 1;

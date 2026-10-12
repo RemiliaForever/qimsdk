@@ -2,7 +2,10 @@
 
 `geniex` accepts one JPEG image per buffer and emits the model's UTF-8 response.
 Set `model` to a GenieX model ID; GenieX downloads uncached models. `prompt`
-defaults to `Describe this image.`.
+defaults to `Describe this image.`. The `device` property defaults to `auto` and
+accepts `auto`, `cpu`, `gpu`, `npu`, `hybrid`, or a concrete GenieX device list
+such as `HTP0,HTP1`. The selected mode is resolved for the model's backend
+when the VLM is created; `npu` selects HTP for `llama_cpp` and NPU for QAIRT.
 
 ## Prerequisites
 
@@ -89,7 +92,7 @@ gst-launch-1.0 -q \
   videotestsrc num-buffers=1 \
   ! video/x-raw,format=I420,width=640,height=480,framerate=30/1 \
   ! jpegenc \
-  ! geniex model=unsloth/Qwen3.5-2B-GGUF:Q4_0 prompt="Describe this image." \
+  ! geniex model=unsloth/Qwen3.5-2B-GGUF:Q4_0 device=npu prompt="Describe this image." \
   ! filesink location=response.txt
 cat response.txt
 ```
@@ -112,6 +115,7 @@ introspection, and the required GStreamer plugins available:
 PYTHONPATH="$PWD/python${PYTHONPATH:+:$PYTHONPATH}" \
   python3 python/examples/reference-apps/qimsdk_ref_geniex_vlm.py \
   --model unsloth/Qwen3.5-2B-GGUF:Q4_0 \
+  --device npu \
   --prompt "Describe this image."
 ```
 
@@ -133,10 +137,21 @@ cmake -S cpp -B build-cpp
 cmake --build build-cpp --target qimsdk_ref_geniex_vlm --parallel
 ./build-cpp/examples/reference-apps/qimsdk_ref_geniex_vlm/qimsdk_ref_geniex_vlm \
   --model unsloth/Qwen3.5-2B-GGUF:Q4_0 \
+  --device npu \
   --prompt "Describe this image."
 ```
 
 Press Ctrl+C to stop.
+
+### Backend and device examples
+
+Use a cached or downloadable `llama_cpp` VLM such as
+`unsloth/Qwen3.5-2B-GGUF:Q4_0` with `--device npu` (all language-model layers
+are offloaded to HTP). For a QAIRT VLM bundle, use
+`qualcomm/Qwen2.5-VL-7B-Instruct` with `--device npu`; its vision encoder is
+part of the bundle and does not require a standalone `mmproj` file. The same
+commands accept `--device cpu` for an explicitly CPU-only `llama_cpp` run
+(`qairt` remains an NPU-only backend). `auto` uses the SDK's backend default.
 
 ## ARM64 / QDC
 
