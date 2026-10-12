@@ -44,7 +44,7 @@ void run(const std::string &model, const std::string &prompt) {
   AppSink sink("output");
   sink.set("sync", false);
   sink.set_buffer_consumer([&inference_count](Buffer buffer) {
-    const uint8_t *data = buffer.data();
+    const uint8_t *data = static_cast<const Buffer &>(buffer).data();
     if (data == nullptr)
       return;
 
